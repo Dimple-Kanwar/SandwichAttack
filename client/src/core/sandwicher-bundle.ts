@@ -275,7 +275,7 @@ const getReserves = async (path: string[]) => {
   };
 };
 
-const sendPuissantBundle = async ()=> {
+export const sendPuissantBundle = async ()=> {
   try {
     await monitor();
   } catch (error: any) {
