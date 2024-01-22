@@ -37,10 +37,10 @@ export const config = {
   CONTRACT_ADDRESS: process.env.FACTORYLIVE_CONTRACT_ADDRESS,
 
   /**
-   * @description Reveal Contract address
+   * @description VSWAP Contract address
    * @type {string}
    */
-  REVEAL_CONTRACT_ADDRESS: process.env.REVEAL_CONTRACT_ADDRESS,
+  VSWAP_CONTRACT_ADDRESS: process.env.VSWAP_CONTRACT_ADDRESS,
   /**
    * STABLE TOKENS addresses e.g BUSD, USDT, USDC, etc
    */
@@ -104,4 +104,17 @@ export const config = {
    * @type {number}
    */
   MIN_PROFIT_THRESHOLD: parseFloat(process.env.MIN_PROFIT_THRESHOLD || '0.001'),
+
+   /**
+   * @description RPC connection url for puissant
+   * @type {string}
+   */
+  PUISSANT_RPC_URL: "",
+
+ /**
+   * @description api connection url for puissant
+   * @type {string}
+   */
+  PUISSANT_API_URL: "https://puissant-bsc.48.club"
+  
 };

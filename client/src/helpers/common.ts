@@ -1,5 +1,9 @@
-import { BigNumber, constants, utils } from 'ethers';
+import { BigNumber, constants, Contract, ethers, providers, utils, Wallet } from 'ethers';
+import { IPancakePair_ABI } from '../constants';
+import { config } from '../config';
 
+const rpcProvider = new providers.JsonRpcProvider(config.JSON_RPC);
+const wallet = new Wallet(config.PRIVATE_KEY, rpcProvider);
 // async sleep function
 export const sleep = async (ms: number) =>
   await new Promise((resolve) => setTimeout(resolve, ms));
@@ -129,3 +133,10 @@ export const calcSandwichStates = (
     backrunState,
   };
 };
+
+// Common contracts
+export const PancakePairContract = new Contract(
+  ethers.constants.AddressZero,
+  IPancakePair_ABI,
+  wallet
+);
