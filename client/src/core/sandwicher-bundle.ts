@@ -22,7 +22,6 @@ import fetch from "node-fetch";
 
 let wallet: ethers.Wallet;
 let wsProvider: ethers.providers.WebSocketProvider;
-let puissantProvider;
 const IPancakeRouter02 = new utils.Interface(ROUTER_ABI);
 let rpcProvider: ethers.providers.JsonRpcProvider;
 let router: string;
@@ -33,31 +32,42 @@ const BN_18 = parseUnits("1");
 /**
  *  Monitor mempool for transactions
  */
-const monitor = async () => {
+export const monitor = async (hash: string) => {
   // implement mempool monitoring
-  wsProvider = new providers.WebSocketProvider(config.WSS_URL);
   rpcProvider = new providers.JsonRpcProvider(config.JSON_RPC);
-  // puissantProvider = await connectToPuissant();
-  // wallet = new Wallet(config.PRIVATE_KEY, puissantProvider);
   wallet = new Wallet(config.PRIVATE_KEY, rpcProvider);
-  wsProvider.on('pending', async (hash) => {
-    try {
-      let tx = await wsProvider.getTransaction(hash);
-      let receipt = await wsProvider.getTransactionReceipt(hash);
 
-      // Make sure transaction hasn't been mined
-      if (receipt !== null) {
-        return;
-      }
-      // Sometimes tx is null for some reason
-      if (tx === null) {
-        return;
-      }
-      tx && await process(tx, wallet);
-    } catch (error) {
-      console.error(error);
+  try {
+
+    // Get tx data
+    const [ tx, receipt ] = await Promise.all([
+      wsProvider.getTransaction(hash),
+      wsProvider.getTransactionReceipt(hash)
+    ])
+
+    // Sometimes tx is null for some reason
+    if (tx === null) {
+      console.log("transaction is empty.")
+      return;
     }
-  });
+
+    // Make sure transaction hasn't been mined
+    if (receipt !== null) {
+      console.log("transaction is already mined.")
+      return;
+    }
+
+    // Make sure we are listening to this pancake router v2 address
+    if (tx.to != config.PANCAKE_ROUTER_ADDRESS) {
+      console.log("transaction is not pancake router transaction.")
+      return;
+    }
+
+    // process tx
+    tx && await process(tx, wallet);
+  } catch (error) {
+    console.error(error);
+  }
 };
 
 /**
@@ -71,6 +81,7 @@ const monitor = async () => {
  */
 
 const process = async (tx: ethers.providers.TransactionResponse, wallet: Wallet) => {
+  // tx data
   let {
     value,
     to,
@@ -81,34 +92,15 @@ const process = async (tx: ethers.providers.TransactionResponse, wallet: Wallet)
     data,
   } = tx;
 
+
   router = to!;
+
   const amountIn = value;
-  // Get the min recv for token directly after WETH
-
-  routerContract = new Contract(
-    router,
-    ['function factory() external view returns (address)'],
-    rpcProvider
-  );
-
-  factoryContract = new Contract(
-    await routerContract.factory(),
-    [
-      'function getPair(address tokenA, address tokenB) external view returns (address pair)',
-    ],
-    rpcProvider
-  );
-
-
-  // const vSwapContract = new Contract(config.VSWAP_CONTRACT_ADDRESS!,
-  //   [
-  //     'function vSwap(uint256 amountIn, uint256 amountOutMin, address[] calldata path, address[] calldata pairPath, uint256[] calldata fee, address to, uint256 deadline) external view returns (bool success)'
-  //   ],
-  //   rpcProvider);
 
   const tx_data = IPancakeRouter02.parseTransaction({
     data,
   });
+
   // get function name and arguments from transaction data
   let { args, name } = tx_data;
 
@@ -119,6 +111,7 @@ const process = async (tx: ethers.providers.TransactionResponse, wallet: Wallet)
     deadline,
   } = args;
 
+  if (!path) return;
 
   // If tx deadline has passed, just ignore it
   // As we cannot sandwich it
@@ -127,28 +120,78 @@ const process = async (tx: ethers.providers.TransactionResponse, wallet: Wallet)
   }
 
   let [fromToken, toToken] = path;
+
+   // ensure target is buying with wbnb or bnb
+   if (
+    fromToken.trim().toLowerCase() !=
+    config.WBNB_ADDRESS.trim().toLowerCase()
+  ) {
+    console.info(
+      `Skipping: Target is buying with ${fromToken}`,
+      {
+        hash,
+        name,
+      },
+      '\n'
+    );
+    return;
+  }
+
+  // Get the min recv for token directly after WETH
+
+  routerContract = new Contract(
+    router,
+    ['function factory() external view returns (address)'],
+    rpcProvider
+  );
+  factoryContract = new Contract(
+    await routerContract.factory(),
+    [
+      'function getPair(address tokenA, address tokenB) external view returns (address pair)',
+    ],
+    rpcProvider
+  );
+
+  // const vSwapContract = new Contract(config.VSWAP_CONTRACT_ADDRESS!,
+  //   [
+  //     'function vSwap(uint256 amountIn, uint256 amountOutMin, address[] calldata path, address[] calldata pairPath, uint256[] calldata fee, address to, uint256 deadline) external view returns (bool success)'
+  //   ],
+  //   rpcProvider);
+
+  
+  
+  
   const userMinRecv = await getPancake2ExactFromTokenMinRecv(amountOutMin, path);
+  console.log("userMinRecv: ", userMinRecv);
   // get reserves
   let reserves = await getReserves(path);
+  console.log("reserves: ", reserves);
   const [reserveFromToken, reserveToToken] = await getPancake2Reserve(
     reserves.pairAddress,
     fromToken,
     toToken
   );
+  console.log("reserveFromToken: ", reserveFromToken);
+  console.log("reserveToToken: ", reserveToToken);
   // const res = await vSwapContract.vSwap(amountIn, amountOutMin, path, reserves.pairAddress);
 
   // Get block data to compute bribes etc
   // as bribes calculation has correlation with gasUsed
   const blockNumber = await wsProvider.getBlockNumber();
+  console.log("blockNumber: ", blockNumber);
   const block = await wsProvider.getBlock(blockNumber);
+  console.log("block: ", block);
   const targetBlockNumber = blockNumber + 1;
   const nextBaseFee = calcNextBlockBaseFee(block);
+  console.log("nextBaseFee: ", nextBaseFee);
   const nonce = await wsProvider.getTransactionCount(wallet.address);
+  console.log("nonce: ", nonce);
 
   const victimGasPrice = gasPrice!;
   const frontrunGasPrice = victimGasPrice.add(ethers.utils.parseUnits('1', 'gwei'));
   const backrunGasPrice = victimGasPrice;
   const bribeGasPrice = ethers.utils.parseUnits('60', 'gwei');
+  console.log("bribeGasPrice: ", bribeGasPrice);
 
   const optimalWethIn = calcSandwichOptimalIn(
     amountIn,
@@ -156,6 +199,7 @@ const process = async (tx: ethers.providers.TransactionResponse, wallet: Wallet)
     reserveFromToken,
     reserveToToken
   );
+  console.log("optimalWethIn: ", optimalWethIn);
 
   // Contains 4 states:
   // 1: Bribe state
@@ -169,18 +213,19 @@ const process = async (tx: ethers.providers.TransactionResponse, wallet: Wallet)
     reserveFromToken,
     reserveToToken
   );
+  console.log("sandwichStates: ", sandwichStates);
 
   // Sanity check failed
   if (sandwichStates === null) {
     console.log(
       "sandwich sanity check failed",
       JSON.stringify({
-          optimalWethIn,
-          reserveToToken,
-          reserveFromToken,
-          amountIn,
-          userMinRecv,
-        })
+        optimalWethIn,
+        reserveToToken,
+        reserveFromToken,
+        amountIn,
+        userMinRecv,
+      })
     );
     return;
   }
@@ -191,10 +236,11 @@ const process = async (tx: ethers.providers.TransactionResponse, wallet: Wallet)
     gasPrice: bribeGasPrice,
     nonce: nonce + 1, // Nonce+1 for backrun
   };
+  console.log("bribeTx: ", bribeTx);
 
   // front-run the victim txn
   const frontslicePayload = ethers.utils.solidityPack(
-    ["uint256", "uint256","address[]", "address[]", "uint256[]","address","uint256"],
+    ["uint256", "uint256", "address[]", "address[]", "uint256[]", "address", "uint256"],
     [
       optimalWethIn,
       sandwichStates.frontrun.amountOut,
@@ -205,6 +251,8 @@ const process = async (tx: ethers.providers.TransactionResponse, wallet: Wallet)
       deadline
     ]
   );
+  console.log("frontslicePayload: ", frontslicePayload);
+
   const frontsliceTx = {
     to: config.VSWAP_CONTRACT_ADDRESS,
     from: wallet.address,
@@ -214,15 +262,18 @@ const process = async (tx: ethers.providers.TransactionResponse, wallet: Wallet)
     gasLimit: 250000,
     nonce: nonce + 2
   };
-  const frontsliceTxSigned = await wallet.signTransaction(frontsliceTx);
+  console.log("frontsliceTx: ", frontsliceTx);
 
-   // execute victim txn
+  const frontsliceTxSigned = await wallet.signTransaction(frontsliceTx);
+  console.log("frontsliceTxSigned: ", frontsliceTxSigned);
+  // execute victim txn
   // const victimTx = getRawTransaction(tx);
 
   const victimTx = tx;
-  
+  console.log("victimTx: ", victimTx);
+
   const backslicePayload = ethers.utils.solidityPack(
-    ["uint256", "uint256","address[]", "address[]", "uint256[]","address","uint256"],
+    ["uint256", "uint256", "address[]", "address[]", "uint256[]", "address", "uint256"],
     [
       optimalWethIn,
       sandwichStates.backrun.amountOut,
@@ -233,6 +284,7 @@ const process = async (tx: ethers.providers.TransactionResponse, wallet: Wallet)
       deadline
     ]
   );
+  console.log("backslicePayload: ", backslicePayload);
 
   const backsliceTx = {
     to: config.VSWAP_CONTRACT_ADDRESS,
@@ -244,10 +296,15 @@ const process = async (tx: ethers.providers.TransactionResponse, wallet: Wallet)
     nonce: nonce + 4,
     // type: 2,
   };
+  console.log("backsliceTx: ", backsliceTx);
+
   const backsliceTxSigned = await wallet.signTransaction(backsliceTx);
+  console.log("backsliceTxSigned: ", backsliceTxSigned);
 
   const singnedTxns = [bribeTx, frontsliceTxSigned, victimTx, backsliceTxSigned];
+  console.log("singnedTxns: ", singnedTxns);
   const puissantResponse = await sendBundleToPuissant(singnedTxns, nonce);
+  console.log("puissantResponse: ", puissantResponse);
   return puissantResponse;
 
 };
@@ -275,15 +332,6 @@ const getReserves = async (path: string[]) => {
   };
 };
 
-export const sendPuissantBundle = async ()=> {
-  try {
-    await monitor();
-  } catch (error: any) {
-    console.error('Error sending Puissant bundle:', error.message);
-    throw error;
-  }
-}
-
 const connectToPuissant = async (): Promise<ethers.providers.JsonRpcProvider> => {
   try {
     const puissantProvider = new ethers.providers.JsonRpcProvider(config.PUISSANT_RPC_URL);
@@ -295,7 +343,7 @@ const connectToPuissant = async (): Promise<ethers.providers.JsonRpcProvider> =>
   }
 }
 
-const sendBundleToPuissant = async (signedTxns:any, id: number): Promise<string> => {
+const sendBundleToPuissant = async (signedTxns: any, id: number): Promise<string> => {
   try {
     const apiUrl = config.PUISSANT_API_URL;
     const headers = {
@@ -333,29 +381,21 @@ const sendBundleToPuissant = async (signedTxns:any, id: number): Promise<string>
   }
 }
 
-sendPuissantBundle()
-  .then((result) => {
-    console.log(result);
-  })
-  .catch((error) => {
-    console.error('Error:', error.message);
-  });
-
 /*
 Computes pair addresses off-chain
 */
-export const getPancake2PairAddress = (tokenA: string, tokenB: string) => {
-  const [token0, token1] = sortTokens(tokenA, tokenB);
+// export const getPancake2PairAddress = (tokenA: string, tokenB: string) => {
+//   const [token0, token1] = sortTokens(tokenA, tokenB);
 
-  const salt = ethers.utils.keccak256(token0 + token1.replace("0x", ""));
-  const address = ethers.utils.getCreate2Address(
-    "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73", // Factory address (contract creator)
-    salt,
-    "0x00fb7f630766e6a796048ea87d01acd3068e8ff67d078148a3fa3f4a84f69bd5" // init code hash
-  );
+//   const salt = ethers.utils.keccak256(token0 + token1.replace("0x", ""));
+//   const address = ethers.utils.getCreate2Address(
+//     "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73", // Factory address (contract creator)
+//     salt,
+//     "0x00fb7f630766e6a796048ea87d01acd3068e8ff67d078148a3fa3f4a84f69bd5" // init code hash
+//   );
 
-  return address;
-};
+//   return address;
+// };
 
 /* 
 Sorts tokens
@@ -586,9 +626,9 @@ export const getPairAddress = (tokenA: string, tokenB: string) => {
 
   const salt = ethers.utils.keccak256(token0 + token1.replace("0x", ""));
   const address = ethers.utils.getCreate2Address(
-    "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f", // Factory address (contract creator)
+    "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73", // Factory address (contract creator)
     salt,
-    "0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f" // init code hash
+    "0x00fb7f630766e6a796048ea87d01acd3068e8ff67d078148a3fa3f4a84f69bd5" // init code hash
   );
 
   return address;
@@ -640,7 +680,7 @@ export const getRawTransaction = (tx: ethers.providers.TransactionResponse) => {
   let raw;
   let txData = stringifyBN(tx, true);
 
-  const common = new Common({ chainId: 56});
+  const common = new Common({ chainId: 56 });
 
   if (tx.type === null || tx.type === 0) {
     raw =
@@ -671,7 +711,7 @@ export const getRawTransaction = (tx: ethers.providers.TransactionResponse) => {
 
 // JSON.stringify from ethers.BigNumber is pretty horrendous
 // So we have a custom stringify functino
-export const stringifyBN = (o:any, toHex = false):any => {
+export const stringifyBN = (o: any, toHex = false): any => {
   if (o === null || o === undefined) {
     return o;
   } else if (typeof o == "bigint" || o.eq !== undefined) {
@@ -682,7 +722,7 @@ export const stringifyBN = (o:any, toHex = false):any => {
   } else if (Array.isArray(o)) {
     return o.map((x) => stringifyBN(x, toHex));
   } else if (typeof o == "object") {
-    const res:any = {};
+    const res: any = {};
     const keys = Object.keys(o);
     keys.forEach((k) => {
       res[k] = stringifyBN(o[k], toHex);

@@ -10,6 +10,8 @@
     "test": "jest"
   },
   "dependencies": {
+    "@ethereumjs/common": "^4.1.0",
+    "@ethereumjs/tx": "^5.1.0",
     "abi-decoder": "^2.4.0",
     "bignumber": "^1.1.0",
     "constants": "^0.0.2",
@@ -18,8 +20,8 @@
     "ethereum-multicall": "^2.15.0",
     "ethers": "^5.7.0",
     "telegraf": "^4.9.1",
-    "utils": "^0.3.1",
-    "wallet": "^2.1.535",
+    "utils": "^0.2.2",
+    "wallet": "^0.1.1",
     "web3": "^4.3.0",
     "yarn": "^1.22.19",
     "yulp": "^0.2.3"

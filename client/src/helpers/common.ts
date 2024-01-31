@@ -1,4 +1,4 @@
-import { BigNumber, constants, Contract, ethers, providers, utils, Wallet } from 'ethers';
+import { BigNumber, Contract, ethers, providers, utils, Wallet } from 'ethers';
 import { IPancakePair_ABI } from '../constants';
 import { config } from '../config';
 

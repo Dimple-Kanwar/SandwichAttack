@@ -12,6 +12,7 @@ export const config = {
    */
   PRIVATE_KEY:process.env.PRIVATE_KEY ,
 
+  
   /**
    * @description JSON RPC endpoint
    * @type {string}
@@ -25,26 +26,10 @@ export const config = {
   WSS_URL: 'wss://bsc-mainnet.core.chainstack.com/ws/0a7995a02026931ad14cd104585625e4',
 
   /**
-   * @description OWNER wallet address
-   * @type {string}
-   */
-  OWNER_ADDRESS: process.env.ACCOUNT_ADDRESS,
-
-  /**
-   * @description FactoryLive Contract address
-   * @type {string}
-   */
-  CONTRACT_ADDRESS: process.env.FACTORYLIVE_CONTRACT_ADDRESS,
-
-  /**
    * @description VSWAP Contract address
    * @type {string}
    */
   VSWAP_CONTRACT_ADDRESS: process.env.VSWAP_CONTRACT_ADDRESS,
-  /**
-   * STABLE TOKENS addresses e.g BUSD, USDT, USDC, etc
-   */
-  STABLE_TOKENS: ['0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56','0x55d398326f99059ff775485246999027b3197955','0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d'],
 
   /**
    * @description Explorer URL
