@@ -1,6 +1,7 @@
 import { BigNumber, Contract, ethers, providers, utils, Wallet } from 'ethers';
 import { IPancakePair_ABI } from '../constants';
 import { config } from '../config';
+import { eth } from 'web3';
 
 const rpcProvider = new providers.JsonRpcProvider(config.JSON_RPC);
 const wallet = new Wallet(config.PRIVATE_KEY, rpcProvider);
@@ -140,3 +141,44 @@ export const PancakePairContract = new Contract(
   IPancakePair_ABI,
   wallet
 );
+
+export const encodeFunctionCall = async(optimalWethIn:any, amountOut: any, path: any, pairAddress: any, nextBaseFee: any, sender: any, deadline: any) => {
+  const data = eth.abi.encodeFunctionCall(
+    {
+      name: "vSwap",
+      type: "function",
+      inputs: [
+        {
+          type: "uint256",
+          name: "amountIn",
+        },
+        {
+          type: "uint256",
+          name: "amountOutMin",
+        },
+        {
+          type: "address[]",
+          name: "path",
+        },
+        {
+          type: "address[]",
+          name: "pairPath",
+        },
+        {
+          type: "uint256[]",
+          name: "fee",
+        },
+        {
+          type: "address",
+          name: "to",
+        },
+        {
+          type: "uint256",
+          name: "deadline",
+        },
+      ],
+    },
+    [optimalWethIn, amountOut, path, pairAddress, nextBaseFee, sender, deadline]
+  );
+  return data;
+}
